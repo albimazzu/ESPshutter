@@ -11,21 +11,4 @@
 #define MODBUS_HOLDINGREG_COMMAND 0
 #define MODBUS_HOLDINGREG_TARGET_POS 1
 
-typedef enum {
-    STOPPED,
-    MOVING_UP,
-    MOVING_DOWN,
-    COLLISION,
-    CALIBRATION
-} ShutterState;
-
-
-typedef enum {
-    STOP,
-    MOVEUP,
-    MOVEDOWN,
-    GOTARGET,
-    CALIBRATE
-} ShutterCommand;
-
 #endif //MODBUSDEF_H

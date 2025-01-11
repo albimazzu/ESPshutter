@@ -14,13 +14,13 @@ DebounceInterrupt::DebounceInterrupt(uint8_t timerIndex, uint8_t pin, uint32_t h
     pinMode(pin, INPUT_PULLUP);
 
     // Imposta l'interrupt sul pin
-    attachInterruptArg(digitalPinToInterrupt(pin), DebounceInterrupt::handleInterruptStatic, this, FALLING);
+    attachInterruptArg(digitalPinToInterrupt(pin), DebounceInterrupt::handleInterruptStatic, this, RISING);
 
     // Calcolo filterTime
     filterTime = 10e5/hzFreq;
 
     // Calcolo valore timeout
-    timeout = 200000;//2*PULSE_COUNT_THRESHOLD*filterTime;
+    timeout = 2*PULSE_COUNT_THRESHOLD*filterTime;
 
     // Registra l'istanza corrente nella mappa
     instances[timerIndex] = this;

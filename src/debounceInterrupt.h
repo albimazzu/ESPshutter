@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #define TIMER_PRESCALER 80
-#define PULSE_COUNT_THRESHOLD 4
+#define PULSE_COUNT_THRESHOLD 2
 
 class DebounceInterrupt {
 public:
