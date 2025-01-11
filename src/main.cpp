@@ -5,9 +5,10 @@
 
 #include "mapping.h"
 #include "debounceInterrupt.h"
-#include "FireTimer.h"
+#include "MillisTimer.h"
 #include "secrets.h"
 #include "connection.h"
+#include "shutter.h"
 
 #define DEFAULT_TIME_fullShutterMove 10000
 #define CALIBRATION_PRESSED_TIME 5000 //msec, when up/down buttons are pressed more than this time start calibration
@@ -19,29 +20,13 @@ Connection wifiConnection;
 DebounceInterrupt debounceInterruptUp(0, PIN_ACIN_1, 60); //freq in Hz
 DebounceInterrupt debounceInterruptDown(1, PIN_ACIN_2, 60); //freq in Hz
 
-FireTimer TIMER_ShutterMove;
-FireTimer TIMER_RelaySpikeFilter;
-FireTimer TIMER_Heartbeat;
+MillisTimer TIMER_Heartbeat;
 
-bool IN_CommandUp = false;
-bool IN_CommandDown = false;
-bool oldIN_CommandUp = false;
-bool oldIN_CommandDown = false;
-bool IN_ACIN_3 = false;
-bool IN_ACIN_4 = false;
+Shutter shutter(PIN_UP_CMD, PIN_DOWN_CMD);
 
-bool OUT_ShutterUp = false;
-bool OUT_ShutterDown = false;
+unsigned long TIME_fullShutterMove = 0;
 
-int STEP_shutterMove = 0;
-int oldSTEP_shutterMove = 1;
-
-unsigned long upDownPressedTime = 0;    //This variable count how much time up or down are kept pressed
-unsigned long TIME_fullShutterMove = 0; //Time in millis needed for complete shutter movement (open or close)
-
-void IO_sync();
 void heartbeat();
-void stateMachine();
 
 //SPIFFS functions
 void setupSPIFFS();
@@ -67,143 +52,79 @@ void setup() {
   pinMode(PIN_USRBTN, INPUT);
 
   TIMER_Heartbeat.begin(500);  
-  TIMER_RelaySpikeFilter.begin(200);
-
 
   setupSPIFFS();
   loadConfig();  // Load config.json var values
 
+  shutter.begin(TIME_fullShutterMove);
+
   //turn on wifi on startup
-  wifiConnection.initWiFiAP("ESP_shutter", "12345678", 60000);
+  //wifiConnection.initWiFiAP("ESP_shutter", "12345678", 60000);
+
+  delay(1000);
+  Serial.println("Setup completed");
   
-  // delay(2000);
-  // Serial.println("filterTime:"+String(debounceInterruptDown.getFilterTime()));
-  // Serial.println("timeout:"+String(debounceInterruptDown.getTimeout()));
 }
 
 
 void loop() {
 
   heartbeat();
-  IO_sync();
-  stateMachine();
-
-  if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
-  {
-    wifiConnection.initWiFiAP("ESP_shutter", "12345678", 60000);
-  }
-  wifiConnection.loop();
-
-  if(IN_CommandUp != oldIN_CommandUp)
-  {
-    oldIN_CommandUp = IN_CommandUp;
-    Serial.println("IN_CommandUp="+String(IN_CommandUp));
-  }
-
-  if(IN_CommandDown != oldIN_CommandDown)
-  {
-    oldIN_CommandDown = IN_CommandDown;
-    Serial.println("IN_CommandDown="+String(IN_CommandDown));
-  }
-}
-
-void stateMachine()
-{
-
-  if(STEP_shutterMove != oldSTEP_shutterMove)
-  {
-    oldSTEP_shutterMove = STEP_shutterMove;
-    Serial.println("STEP_shutterMove="+String(STEP_shutterMove));
-  }
-
-  switch (STEP_shutterMove)
-  {
-    //IDLE
-    case 0:    
-      OUT_ShutterDown = false;
-      OUT_ShutterUp = false;
-      TIMER_ShutterMove.stop();
-      if(IN_CommandDown != IN_CommandUp)
-      {
-        OUT_ShutterUp = IN_CommandUp;
-        OUT_ShutterDown = IN_CommandDown;
-        upDownPressedTime = millis();
-        TIMER_ShutterMove.begin(TIME_fullShutterMove);
-        TIMER_ShutterMove.start();
-        STEP_shutterMove = 1;
-      }
-    break;
-
-    //wait button release
-    case 1:
-      //If button is pressed more than CALIBRATION_PRESSED_TIME, start calibration process.
-      if(millis()- upDownPressedTime > CALIBRATION_PRESSED_TIME)
-      {
-        Serial.println("Starting time calibration");
-        STEP_shutterMove = 100;
-      }
-      if(IN_CommandDown == 0 && IN_CommandUp == 0)
-        STEP_shutterMove = 2;
-    break;
-
-    //Check stop action
-    case 2:
-      if(TIMER_ShutterMove.fire() || IN_CommandDown || IN_CommandUp)
-      {
-        TIMER_ShutterMove.stop();
-        OUT_ShutterUp = false;
-        OUT_ShutterDown = false;
-        STEP_shutterMove = 3;
-      }
-    break;        
-
-    //Relay spike filtering
-    case 3:
-      TIMER_RelaySpikeFilter.start();
-      if(!IN_CommandDown && !IN_CommandUp && TIMER_RelaySpikeFilter.fire())
-      {
-        TIMER_RelaySpikeFilter.stop();        
-        STEP_shutterMove = 0;
-      }
-    break;    
-
-    //calibration phase
-    case 100:
-      if(!IN_CommandDown && !IN_CommandUp)
-      {
-        TIME_fullShutterMove  = millis()-upDownPressedTime;
-        Serial.println("New TIME_fullShutterMove value:"+String(TIME_fullShutterMove));
-        saveConfig();
-        STEP_shutterMove = 3;
-      }
-      break;
+  shutter.handler();
   
-    default:
-      Serial.println("bad STEP_shutterMove!");
-      STEP_shutterMove = 0;
-      break;
+  if(Serial.available()>0)
+  {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    if(command == "up")
+    {
+      shutter.commandUp(true);
+    }
+    else if(command == "down")
+    {
+      shutter.commandDown(true);
+    }
+    else if(command == "stop")
+    {
+      shutter.stop();
+    }
+    else if(command == "save")
+    {
+      saveConfig();
+    }
+    else if(command == "load")
+    {
+      loadConfig();
+    }
+    else if(command == "time")
+    {
+      Serial.println(shutter.getMoveTime());
+    }
+    else if(command == "calibrate")
+    {
+      shutter.commandUp(true);
+      delay(CALIBRATION_PRESSED_TIME);
+      shutter.stop();
+      shutter.commandDown(true);
+      delay(CALIBRATION_PRESSED_TIME);
+      shutter.stop();
+    }
   }
 
+  // if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
+  // {
+  //   wifiConnection.initWiFiAP("ESP_shutter", "12345678", 60000);
+  // }
+  // wifiConnection.loop();
 }
 
 void heartbeat()
 {
   TIMER_Heartbeat.start();
-  if(TIMER_Heartbeat.fire())
+  if(TIMER_Heartbeat.fire(true))
   {
-    TIMER_Heartbeat.stop();
     digitalWrite(PIN_STATUSLED,!digitalRead(PIN_STATUSLED));
   }  
-}
-
-void IO_sync()
-{
-  digitalWrite(PIN_UP_CMD, OUT_ShutterUp);
-  digitalWrite(PIN_DOWN_CMD, OUT_ShutterDown);
-
-  //IN_CommandUp = !digitalRead(PIN_USRBTN);
-  IN_CommandUp = debounceInterruptUp.isPressed();
-  IN_CommandDown = debounceInterruptDown.isPressed();
 }
 
 // Init SPIFFS
