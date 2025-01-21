@@ -1,14 +1,23 @@
 #ifndef MODBUSDEF_H
 #define MODBUSDEF_H
 
+#define MODBUS_BAUDRATE 9600
+
 //Device modbus input registers
 #define MODBUS_INPUTREG_STATUS 0
 #define MODBUS_INPUTREG_POSITION 1
-#define MODBUS_INPUTREG_OPENING_TIME 2
+#define MODBUS_INPUTREG_FULLMOVE_TIME 2
 #define MODBUS_INPUTREG_COLLISION_THRESHOLD 3
 
 //Device modbus holding registers
 #define MODBUS_HOLDINGREG_COMMAND 0
-#define MODBUS_HOLDINGREG_TARGET_POS 1
+#define MODBUS_HOLDINGREG_OPENING_PERCENTAGE 1
+
+typedef enum {
+    CMD_STOP=0,
+    CMD_MOVE_UP,
+    CMD_MOVE_DOWN,
+    CMD_GO_TARGET
+}eShutterCommand;
 
 #endif //MODBUSDEF_H

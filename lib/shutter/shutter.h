@@ -8,12 +8,14 @@
 
 #define DEBUG 1
 #define DEFAULT_MOVE_TIME 5000UL
+#define CALIBRATION_TIMEOUT_TIME 60000UL
 
 typedef enum {
     INIT,
     IDLE,
     MOVING_UP,
     MOVING_DOWN,
+    CALIBRATE,
     COLLISION,
     STOP
 } eShutterState;
@@ -30,10 +32,11 @@ private:
 
     // Timing variables
     unsigned long moveTime;
+    unsigned long elapsedMoveTime; //used when calibrating
 
     // Timers
     MillisTimer TIMER_ShutterMove;
-    MillisTimer TIMER_RelaySpikeFilter;
+    MillisTimer TIMER_CalibrationTimeout;
 
     // Callback for saving configuration
     std::function<void(unsigned long)> saveCallback;
@@ -41,10 +44,14 @@ private:
 public:
     Shutter(int upPin, int downPin, unsigned long shutterMoveTime=DEFAULT_MOVE_TIME);
     void begin(unsigned long shutterMoveTime=DEFAULT_MOVE_TIME);
-    void commandUp(bool state);
-    void commandDown(bool state);
+    void commandUp();
+    void commandDown();
+    void startCalibration();
+    void stopCalibration();
     void stop();
+    bool isMoving();
     unsigned long getMoveTime();
+    unsigned long getLastMoveTime();
     void handler();
     String shutterStateToString(eShutterState state);
     void log(String message);
