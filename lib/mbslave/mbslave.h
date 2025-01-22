@@ -2,18 +2,22 @@
 #define MBSLAVE_H
 
 #include <ModbusRTU.h>
+#include <functional>
 #include "ModbusDef.h"
 
 class MbSlave {
 public:
     MbSlave(HardwareSerial& serialPort, int txPin, int rxPin, int rtsPin);
+    
+    using HregCallback = std::function<uint16_t(uint16_t address, uint16_t value)>;
 
-    void begin(uint8_t slaveId);
+    void begin(unsigned long baud, uint8_t slaveId);
     void task(); // Da chiamare nel loop principale
-
-    // Gestione dei registri
-    static uint16_t readInputRegister(Modbus::ResultCode event, uint16_t address);
-    static bool writeHoldingRegister(Modbus::ResultCode event, uint16_t address, uint16_t value);
+    void onSetHreg(HregCallback callback);
+    bool updateInputReg(uint16_t address, uint16_t value);
+    uint16_t getHoldingReg(uint16_t address);
+    bool writeHoldingReg(uint16_t address, uint16_t value);
+  
 
 private:
     ModbusRTU modbus;
@@ -22,9 +26,8 @@ private:
     int rxPin;
     int rtsPin;
 
-    // Registri
-    static uint16_t inputRegisters[4];
-    static uint16_t holdingRegisters[2];
+    static HregCallback hregCallback;
+    static uint16_t hregCallbackHandler(TRegister* reg, uint16_t val);
 };
 
 #endif // MBSLAVE_H

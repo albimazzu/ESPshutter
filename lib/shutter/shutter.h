@@ -50,10 +50,14 @@ public:
     void stopCalibration();
     void stop();
     bool isMoving();
-    unsigned long getMoveTime();
+    bool isMovingUp();
+    bool isMovingDown();
+    bool isCalibrating();
+    unsigned long getFullMoveTime();
     unsigned long getLastMoveTime();
     void handler();
     String shutterStateToString(eShutterState state);
+    eShutterState getShutterState();
     void log(String message);
 };
 

@@ -75,10 +75,31 @@ bool Shutter::isMoving() {
     return shutterState == MOVING_UP || shutterState == MOVING_DOWN;
 }
 
+// Returns true if the shutter is currently moving up
+// Returns:
+// - True if the shutter is moving up, false otherwise
+bool Shutter::isMovingUp() {
+    return shutterState == MOVING_UP;
+}
+
+// Returns true if the shutter is currently moving down
+// Returns:
+// - True if the shutter is moving down, false otherwise
+bool Shutter::isMovingDown() {
+    return shutterState == MOVING_DOWN;
+}
+
+// Returns true if the shutter is currently calibrating
+// Returns:
+// - True if the shutter is calibrating, false otherwise
+bool Shutter::isCalibrating() {
+    return shutterState == CALIBRATE;
+}
+
 // Returns the time in milliseconds of moveTime variable
 // Returns:
 // - Time in milliseconds moveTime variable
-unsigned long Shutter::getMoveTime() {
+unsigned long Shutter::getFullMoveTime() {
     return moveTime;
 }
 
@@ -169,6 +190,12 @@ String Shutter::shutterStateToString(eShutterState state) {
             return "UNKNOWN";
     }
 }
+
+eShutterState Shutter::getShutterState()
+{
+    return shutterState;
+}
+
 
 void Shutter::log(String message) {
     if (DEBUG) {

@@ -25,7 +25,7 @@ JsonSpiffs jsonSpiffs("/config.json");
 
 Connection wifiConnection;
 
-MbSlave modbusSlave(Serial1, 11, 12, PIN_485DIR);
+MbSlave modbusSlave(Serial1, 12, 11, PIN_485DIR);
 
 // Istanza della classe DebounceInterrupt
 DebounceInterrupt upCommand(0, PIN_ACIN_1, 60); //freq in Hz
@@ -38,7 +38,10 @@ MillisTimer TIMER_CalibrationTrigger;
 
 Shutter shutter(PIN_UP_CMD, PIN_DOWN_CMD);
 
+uint16_t oldModbusCommand = 0;
+
 void physicalInputsHandler();
+void modbusCommandsHandler();
 void heartbeat();
 void debug();
 
@@ -67,7 +70,9 @@ void setup() {
 
   loadConfig();
 
-  modbusSlave.begin(nModbusId);
+  //modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
+
+  Serial1.begin(9600, SERIAL_8N1, 12, 11);
 
   TIMER_Heartbeat.begin(500);  
   TIMER_CalibrationTrigger.begin(DEF_CALIBRATION_PRESSED_TIME);
@@ -87,8 +92,18 @@ void loop() {
 
   heartbeat();
   shutter.handler();
-  modbusSlave.task();
   physicalInputsHandler();
+
+  
+  // modbusSlave.task();
+  //Update input reg
+  // modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
+  // // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
+  // modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
+  // // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
+
+
+
 
   
 
@@ -124,9 +139,9 @@ void physicalInputsHandler()
     Serial.println("upCommand falling edge");
     TIMER_CalibrationTrigger.stop(); //stop calibration timer
     shutter.stopCalibration();
-    if(shutter.getMoveTime() != T_fullShutterMove)
+    if(shutter.getFullMoveTime() != T_fullShutterMove)
     {
-      T_fullShutterMove = shutter.getMoveTime();
+      T_fullShutterMove = shutter.getFullMoveTime();
       jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
       jsonSpiffs.saveConfig();
       Serial.println("New calibration time:"+String(T_fullShutterMove));
@@ -157,9 +172,9 @@ void physicalInputsHandler()
     Serial.println("downCommand falling edge");
     TIMER_CalibrationTrigger.stop(); //stop calibration timer
     shutter.stopCalibration();
-    if(shutter.getMoveTime() != T_fullShutterMove)
+    if(shutter.getFullMoveTime() != T_fullShutterMove)
     {
-      T_fullShutterMove = shutter.getMoveTime();
+      T_fullShutterMove = shutter.getFullMoveTime();
       jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
       jsonSpiffs.saveConfig();
       Serial.println("New calibration time:"+String(T_fullShutterMove));
@@ -173,6 +188,48 @@ void physicalInputsHandler()
     TIMER_CalibrationTrigger.stop();
     if(shutter.isMoving())
       shutter.startCalibration();
+  }
+}
+
+void modbusCommandsHandler()
+{
+  if(modbusSlave.getHoldingReg(HOLDINGREG_COMMAND) != oldModbusCommand)
+  {
+    //Command changed
+    oldModbusCommand = modbusSlave.getHoldingReg(HOLDINGREG_COMMAND);
+    Serial.println("Received modbus command: " + String(oldModbusCommand));
+    switch (oldModbusCommand)
+    {
+    case CMD_STOP:
+      if(shutter.isMoving() && !shutter.isCalibrating())
+        shutter.stop();
+      break;
+
+    case CMD_MOVE_UP:
+      if(!shutter.isCalibrating())
+      {
+        if(shutter.isMovingDown())
+          shutter.stop();
+        shutter.commandUp();
+      }
+      break;
+
+    case CMD_MOVE_DOWN:
+      if(!shutter.isCalibrating())
+      {
+        if(shutter.isMovingUp())
+          shutter.stop();
+        shutter.commandDown();
+      }
+      break;
+
+    case CMD_GO_TARGET:
+      /* code */
+      break;
+    
+    default:
+      break;
+    }
   }
 }
 
@@ -213,7 +270,7 @@ void debug()
     }
     else if(command == "time")
     {
-      Serial.println(shutter.getMoveTime());
+      Serial.println(shutter.getFullMoveTime());
     }
   }
   

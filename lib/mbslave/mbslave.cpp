@@ -1,24 +1,23 @@
 #include "mbslave.h"
 
-// // Inizializza i registri con valori predefiniti
-uint16_t MbSlave::inputRegisters[4] = {0, 0, 300, 100}; // Status, Position, Fullmove Time, Collision Threshold
-uint16_t MbSlave::holdingRegisters[2] = {CMD_STOP, 0};          // Command, Opening Percentage
+// Callback statica per i registri holding
+MbSlave::HregCallback MbSlave::hregCallback = nullptr;
 
 MbSlave::MbSlave(HardwareSerial& serialPort, int txPin, int rxPin, int rtsPin)
     : serial(serialPort), txPin(txPin), rxPin(rxPin), rtsPin(rtsPin) {}
 
-void MbSlave::begin(uint8_t slaveId) {
-    // Configura la seriale e Modbus
-    serial.begin(MODBUS_BAUDRATE, SERIAL_8N1, rxPin, txPin);
+void MbSlave::begin(unsigned long baud, uint8_t slaveId) {
+    //Modbus initialization
+    //serial.begin(baud, SERIAL_8N1, rxPin, txPin); TO FIX!!
     modbus.begin(&serial, rtsPin);
     modbus.slave(slaveId);
+    
+    //Mapping registers
+    modbus.addIreg(0, 0, 10);
+    modbus.addHreg(0, 0, 10);
 
-    // Mappa i registri
-    // modbus.addIreg(0, inputRegisters, 4);    // Input Registers (4 registri consecutivi)
-    // modbus.addHreg(0, holdingRegisters, 2); // Holding Registers (2 registri consecutivi)
-
-    // // Callback per scrittura sui holding registers
-    // modbus.onSetHreg(writeHoldingRegister);
+    // Callback per scrittura sui holding registers
+    //modbus.onSetHreg(0, hregCallbackHandler, 10);
 }
 
 
@@ -26,17 +25,30 @@ void MbSlave::task() {
     modbus.task();
 }
 
-uint16_t MbSlave::readInputRegister(Modbus::ResultCode event, uint16_t address) {
-    if (address < 4) {
-        return inputRegisters[address];
-    }
-    return 0;
+// Registra una callback globale per tutti i registri holding
+void MbSlave::onSetHreg(HregCallback callback) {
+    hregCallback = callback;
 }
 
-bool MbSlave::writeHoldingRegister(Modbus::ResultCode event, uint16_t address, uint16_t value) {
-    if (address < 2) {
-        holdingRegisters[address] = value;
-        return true;
+uint16_t MbSlave::hregCallbackHandler(TRegister* reg, uint16_t val) {
+    if (hregCallback) {
+        // Usa reinterpret_cast per ottenere l'indirizzo
+        uint16_t address = *reinterpret_cast<uint16_t*>(&reg->address);
+        return hregCallback(address, val);
     }
-    return false;
+    // Ritorna il valore scritto come predefinito
+    return val;
+}
+
+bool MbSlave::updateInputReg(uint16_t address, uint16_t value)
+{
+    return modbus.Ireg(address, value);
+}
+
+uint16_t MbSlave::getHoldingReg(uint16_t address) {
+    return modbus.Hreg(address);
+}
+
+bool MbSlave::writeHoldingReg(uint16_t address, uint16_t value) {
+    return modbus.Hreg(address, value);
 }

@@ -4,20 +4,25 @@
 #define MODBUS_BAUDRATE 9600
 
 //Device modbus input registers
-#define MODBUS_INPUTREG_STATUS 0
-#define MODBUS_INPUTREG_POSITION 1
-#define MODBUS_INPUTREG_FULLMOVE_TIME 2
-#define MODBUS_INPUTREG_COLLISION_THRESHOLD 3
+typedef enum {
+    INPUTREG_STATUS = 0,
+    INPUTREG_POSITION,
+    INPUTREG_FULLMOVE_TIME,
+    INPUTREG_COLLISION_THRESHOLD
+} ModbusInputRegister;
 
 //Device modbus holding registers
-#define MODBUS_HOLDINGREG_COMMAND 0
-#define MODBUS_HOLDINGREG_OPENING_PERCENTAGE 1
+typedef enum {
+    HOLDINGREG_COMMAND = 0,
+    HOLDINGREG_OPENING_PERCENTAGE
+} ModbusHoldingRegister;
 
 typedef enum {
-    CMD_STOP=0,
+    CMD_NONE = 0,
+    CMD_STOP,
     CMD_MOVE_UP,
     CMD_MOVE_DOWN,
     CMD_GO_TARGET
-}eShutterCommand;
+} eShutterCommand;
 
 #endif //MODBUSDEF_H
