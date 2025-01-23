@@ -7,7 +7,7 @@
 
 class MbSlave {
 public:
-    MbSlave(HardwareSerial& serialPort, int txPin, int rxPin, int rtsPin);
+    MbSlave(HardwareSerial& serialPort, int rtsPin, int txPin=-1, int rxPin=-1);
     
     using HregCallback = std::function<uint16_t(uint16_t address, uint16_t value)>;
 

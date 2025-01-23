@@ -25,7 +25,8 @@ JsonSpiffs jsonSpiffs("/config.json");
 
 Connection wifiConnection;
 
-MbSlave modbusSlave(Serial1, 12, 11, PIN_485DIR);
+//MbSlave modbusSlave(Serial1, PIN_485DIR, 21, 20);
+MbSlave modbusSlave(Serial0, PIN_485DIR);
 
 // Istanza della classe DebounceInterrupt
 DebounceInterrupt upCommand(0, PIN_ACIN_1, 60); //freq in Hz
@@ -70,9 +71,9 @@ void setup() {
 
   loadConfig();
 
-  //modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
+  modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
+ // modbusSlave.onSetHreg(modbusCommandsHandler);
 
-  Serial1.begin(9600, SERIAL_8N1, 12, 11);
 
   TIMER_Heartbeat.begin(500);  
   TIMER_CalibrationTrigger.begin(DEF_CALIBRATION_PRESSED_TIME);
@@ -93,9 +94,10 @@ void loop() {
   heartbeat();
   shutter.handler();
   physicalInputsHandler();
+  modbusSlave.task();
+  modbusCommandsHandler();
 
-  
-  // modbusSlave.task();
+
   //Update input reg
   // modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
   // // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
@@ -109,7 +111,7 @@ void loop() {
 
   // if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
   // {
-  //   wifiConnection.initWiFiAP("ESP_shutter", "12345678", 60000);
+  //  wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
   // }
   // wifiConnection.loop();
 }
@@ -226,6 +228,10 @@ void modbusCommandsHandler()
     case CMD_GO_TARGET:
       /* code */
       break;
+
+    case 10:
+      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+      break;
     
     default:
       break;
@@ -293,8 +299,8 @@ void loadConfig()
   T_openingShutterMove = jsonSpiffs.get("T_openingShutterMove", DEFAULT_T_openingShutterMove);
   nModbusId = jsonSpiffs.get("nModbusId", DEFAULT_nModbusId);
   //Wifi ap settings
-  String wifiSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid");
-  String wifiPassword = jsonSpiffs.getNested<String>("wifiAP", "password");
+  wifiApSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid");
+  wifiApPassword = jsonSpiffs.getNested<String>("wifiAP", "password");
 
   jsonSpiffs.printConfig();
 }

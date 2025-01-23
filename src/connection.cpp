@@ -40,7 +40,8 @@ void Connection::initWiFiAP(const char* ssid, const char* password, unsigned lon
 
     // Format the SSID with the last 3 bytes of the MAC address
     char fullSSID[32];  // Assuming a maximum SSID length of 31 characters + null terminator
-    snprintf(fullSSID, sizeof(fullSSID), "%s_%s", ssid, mac);
+    // snprintf(fullSSID, sizeof(fullSSID), "%s_%s", ssid, mac);
+    snprintf(fullSSID, sizeof(fullSSID), "%s", ssid); //ssid only
 
     // Start the Access Point with the formatted SSID
     bool success = WiFi.softAP(fullSSID, password);
@@ -85,7 +86,7 @@ wifi_mode_t Connection::getWiFiStatus() {
 }
 
 void Connection::initOTA(){
-
+    WebSerial.begin(&server);
     ElegantOTA.begin(&server);    // Start ElegantOTA
     server.begin();
 }

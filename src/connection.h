@@ -5,6 +5,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
+#include "WebSerial.h"
 
 class Connection {
 private:

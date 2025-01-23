@@ -3,12 +3,16 @@
 // Callback statica per i registri holding
 MbSlave::HregCallback MbSlave::hregCallback = nullptr;
 
-MbSlave::MbSlave(HardwareSerial& serialPort, int txPin, int rxPin, int rtsPin)
+MbSlave::MbSlave(HardwareSerial& serialPort, int rtsPin, int txPin, int rxPin)
     : serial(serialPort), txPin(txPin), rxPin(rxPin), rtsPin(rtsPin) {}
+
 
 void MbSlave::begin(unsigned long baud, uint8_t slaveId) {
     //Modbus initialization
-    //serial.begin(baud, SERIAL_8N1, rxPin, txPin); TO FIX!!
+    if(rxPin >0 && txPin >0)
+        serial.begin(baud, SERIAL_8N1, rxPin, txPin);
+    else
+        serial.begin(baud, SERIAL_8N1);
     modbus.begin(&serial, rtsPin);
     modbus.slave(slaveId);
     
@@ -17,7 +21,7 @@ void MbSlave::begin(unsigned long baud, uint8_t slaveId) {
     modbus.addHreg(0, 0, 10);
 
     // Callback per scrittura sui holding registers
-    //modbus.onSetHreg(0, hregCallbackHandler, 10);
+    modbus.onSetHreg(0, hregCallbackHandler, 10);
 }
 
 
