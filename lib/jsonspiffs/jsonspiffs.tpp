@@ -28,13 +28,13 @@ T JsonSpiffs::getNested(const char* objectKey, const char* nestedKey) {
 template<typename T>
 T JsonSpiffs::getNested(const char* objectKey, const char* nestedKey, T defaultValue) {
     // Verifica se l'oggetto principale esiste
-    if (!config.containsKey(objectKey)) {
-        config[objectKey] = JsonObject(); // Crea un oggetto vuoto
+    if (!config[objectKey]) {
+        config.createNestedObject(objectKey); // Crea un oggetto vuoto
     }
 
     // Verifica se la sottochiave esiste nell'oggetto principale
     JsonObject nestedObject = config[objectKey].as<JsonObject>();
-    if (!nestedObject.containsKey(nestedKey)) {
+    if (!nestedObject[nestedKey]) {
         nestedObject[nestedKey] = defaultValue; // Aggiungi la sottochiave con il valore di default
     }
 

@@ -6,7 +6,6 @@
 #include "mapping.h"
 #include "debounceInterrupt.h"
 #include "MillisTimer.h"
-#include "secrets.h"
 #include "connection.h"
 #include "shutter.h"
 #include "variables.h"
@@ -31,8 +30,12 @@ MbSlave modbusSlave(Serial0, PIN_485DIR);
 // Istanza della classe DebounceInterrupt
 DebounceInterrupt upCommand(0, PIN_ACIN_1, 60); //freq in Hz
 DebounceInterrupt downCommand(1, PIN_ACIN_2, 60); //freq in Hz
+DebounceInterrupt remoteUpCommand(2, PIN_ACIN_3, 60); //freq in Hz
+DebounceInterrupt remoteDownCommand(3, PIN_ACIN_4, 60); //freq in Hz
 bool lastUpCommand = false;
 bool lastDownCommand = false;
+bool lastRemoteUpCommand = false;
+bool lastRemoteDownCommand = false;
 
 MillisTimer TIMER_Heartbeat;
 MillisTimer TIMER_CalibrationTrigger;
@@ -68,11 +71,21 @@ void setup() {
   pinMode(PIN_ACIN_4, INPUT);
   pinMode(PIN_SENSE, INPUT);
   pinMode(PIN_USRBTN, INPUT);
+  //pinMode(20, INPUT_PULLDOWN); //weak pulldown on RX pin to allow correct signal level, needed if R34 is missing
 
   loadConfig();
 
   modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
- // modbusSlave.onSetHreg(modbusCommandsHandler);
+
+  // Serial0.begin(115200);
+  // digitalWrite(PIN_485DIR, LOW);
+  // while (1)
+  // {
+  //   if(Serial0.available() > 0)
+  //   {
+  //     Serial.print(Serial0.read());
+  //   }
+  // }
 
 
   TIMER_Heartbeat.begin(500);  
@@ -81,7 +94,7 @@ void setup() {
   shutter.begin(T_fullShutterMove);
 
   //turn on wifi on startup
-  //wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+  wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
 
   delay(1000);
   Serial.println("Setup completed");
@@ -99,21 +112,17 @@ void loop() {
 
 
   //Update input reg
-  // modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
-  // // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
-  // modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
-  // // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
-
-
-
-
+  modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
+  // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
+  modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
+  // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
   
 
-  // if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
-  // {
-  //  wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
-  // }
-  // wifiConnection.loop();
+  if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
+  {
+   wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+  }
+  wifiConnection.loop();
 }
 
 void physicalInputsHandler()
@@ -184,6 +193,55 @@ void physicalInputsHandler()
   }
   lastDownCommand = downCommand.isPressed();
   #pragma endregion
+  
+  #pragma region remoteUpCommand
+  //RISING edge detection remoteUpCommand
+  if(remoteUpCommand.isPressed() == true && lastRemoteUpCommand == false)
+  {
+    Serial.println("remoteUpCommand rising edge");
+    if(shutter.isMoving())
+    {
+      shutter.stop();
+      shutter.commandUp();
+    }
+    else
+    {
+      shutter.commandUp();
+    }
+  }
+  //FALLING edge detection remoteUpCommand
+  if(upCommand.isPressed() == false && lastUpCommand == true)
+  {
+    Serial.println("remoteUpCommand falling edge");
+    shutter.stop();   
+  }
+  lastRemoteUpCommand = remoteUpCommand.isPressed();
+  #pragma endregion
+
+  #pragma region remoteDownCommand
+  //RISING edge detection remoteDownCommand
+  if(downCommand.isPressed() == true && lastDownCommand == false)
+  {
+    Serial.println("downCommand rising edge");
+    if(shutter.isMoving())
+    {
+      shutter.stop();
+      shutter.commandDown();
+    }
+    else
+    {
+      shutter.commandDown();
+    }
+  }
+  //FALLING edge detection remoteDownCommand
+  if(downCommand.isPressed() == false && lastDownCommand == true)
+  {
+    Serial.println("downCommand falling edge");
+    shutter.stop();
+  }
+  lastRemoteDownCommand = remoteDownCommand.isPressed();
+  #pragma endregion
+  
 
   if(TIMER_CalibrationTrigger.fire())
   {
@@ -293,52 +351,18 @@ void setupSPIFFS() {
 
 void loadConfig()
 {
-  jsonSpiffs.begin();
-  jsonSpiffs.loadConfig();
+  jsonSpiffs.begin();  
+  bool configExist = jsonSpiffs.loadConfig();
+
   T_fullShutterMove = jsonSpiffs.get("T_fullShutterMove", DEFAULT_T_fullShutterMove);
   T_openingShutterMove = jsonSpiffs.get("T_openingShutterMove", DEFAULT_T_openingShutterMove);
   nModbusId = jsonSpiffs.get("nModbusId", DEFAULT_nModbusId);
   //Wifi ap settings
-  wifiApSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid");
-  wifiApPassword = jsonSpiffs.getNested<String>("wifiAP", "password");
+  wifiApSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid", DEFAULT_AP_SSID);
+  wifiApPassword = jsonSpiffs.getNested<String>("wifiAP", "password", DEFAULT_AP_PASSWORD);
+
+  if(!configExist)
+    jsonSpiffs.saveConfig();
 
   jsonSpiffs.printConfig();
 }
-
-// //Loading config.json
-// void loadConfig() {
-//   File file = SPIFFS.open("/config.json", "r");
-//   if (!file) {
-//     Serial.println("Failed to open config file");
-//     return;
-//   }
-
-//   JsonDocument doc;
-//   DeserializationError error = deserializeJson(doc, file);
-//   if (error) {
-//     Serial.println("Failed to read config file, using default T_fullShutterMove");
-//     T_fullShutterMove = DEFAULT_T_fullShutterMove;
-//   } else {
-//     T_fullShutterMove = doc["fullShutterMove"] | DEFAULT_T_fullShutterMove;
-//     Serial.println("Loaded fullShutterMove: " + String(T_fullShutterMove));
-//   }
-//   file.close();
-// }
-
-// // Save data into config.json
-// void saveConfig() {
-//   File file = SPIFFS.open("/config.json", "w");
-//   if (!file) {
-//     Serial.println("Failed to open config file for writing");
-//     return;
-//   }
-
-//   JsonDocument doc;
-//   doc["fullShutterMove"] = T_fullShutterMove;
-  
-//   if (serializeJson(doc, file) == 0) {
-//     Serial.println("Failed to write to config file");
-//   }
-  
-//   file.close();
-// }

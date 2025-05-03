@@ -1,9 +1,9 @@
 {
-    "T_fullShutterMove": 9349,
+    "T_fullShutterMove": 25000,
     "T_openingShutterMove": 5000,
-    "nModbusId": 2,
+    "nModbusId": 5,
     "wifiAP": {
-        "ssid": "ESP_Shutter",
+        "ssid": "Tapp_Cucina_Finestra",
         "password": "12345678"
     }
 }

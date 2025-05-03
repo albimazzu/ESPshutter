@@ -14,7 +14,7 @@ bool JsonSpiffs::begin() {
 bool JsonSpiffs::loadConfig() {
     if (!SPIFFS.exists(configFilePath)) {
         Serial.println("Config file does not exist, creating default.");
-        return saveConfig();//createDefaultConfig();
+        return false;
     }
 
     File file = SPIFFS.open(configFilePath, "r");
