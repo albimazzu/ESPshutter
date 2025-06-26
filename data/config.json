@@ -1,9 +1,9 @@
 {
-    "T_fullShutterMove": 25000,
+    "T_fullShutterMove": 23000,
     "T_openingShutterMove": 5000,
-    "nModbusId": 5,
+    "nModbusId": 7,
     "wifiAP": {
-        "ssid": "Tapp_Cucina_Finestra",
+        "ssid": "Tapp_Porta_Sala",
         "password": "12345678"
     }
 }

@@ -28,10 +28,11 @@ Connection wifiConnection;
 MbSlave modbusSlave(Serial0, PIN_485DIR);
 
 // Istanza della classe DebounceInterrupt
-DebounceInterrupt upCommand(0, PIN_ACIN_1, 60); //freq in Hz
-DebounceInterrupt downCommand(1, PIN_ACIN_2, 60); //freq in Hz
-DebounceInterrupt remoteUpCommand(2, PIN_ACIN_3, 60); //freq in Hz
-DebounceInterrupt remoteDownCommand(3, PIN_ACIN_4, 60); //freq in Hz
+DebounceInterrupt upCommand(PIN_ACIN_1, 4, FALLING);
+DebounceInterrupt downCommand(PIN_ACIN_2, 4, FALLING);
+//DebounceInterrupt remoteUpCommand(2, PIN_ACIN_3, 60); //freq in Hz
+//DebounceInterrupt remoteDownCommand(3, PIN_ACIN_4, 60); //freq in Hz
+
 bool lastUpCommand = false;
 bool lastDownCommand = false;
 bool lastRemoteUpCommand = false;
@@ -55,6 +56,14 @@ void loadConfig();
 void saveConfig();
 
 
+void eventoTasto1(bool pressed) {
+    Serial.println("[Tasto 1] Stato: " + String(pressed));
+}
+
+void eventoTasto2(bool pressed) {
+    Serial.println("[Tasto 2] Stato: " + String(pressed));
+}
+
 void setup() {
   
   Serial.begin(115200);
@@ -77,17 +86,6 @@ void setup() {
 
   modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
 
-  // Serial0.begin(115200);
-  // digitalWrite(PIN_485DIR, LOW);
-  // while (1)
-  // {
-  //   if(Serial0.available() > 0)
-  //   {
-  //     Serial.print(Serial0.read());
-  //   }
-  // }
-
-
   TIMER_Heartbeat.begin(500);  
   TIMER_CalibrationTrigger.begin(DEF_CALIBRATION_PRESSED_TIME);
 
@@ -95,6 +93,9 @@ void setup() {
 
   //turn on wifi on startup
   wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+
+  upCommand.setCallback(eventoTasto1);
+  downCommand.setCallback(eventoTasto2);
 
   delay(1000);
   Serial.println("Setup completed");
@@ -135,28 +136,17 @@ void physicalInputsHandler()
     Serial.println("upCommand rising edge");
     if(shutter.isMoving())
     {
-      TIMER_CalibrationTrigger.stop();
       shutter.stop();
     }
     else
     {
       shutter.commandUp();
-      TIMER_CalibrationTrigger.start(); //start calibration timer
     }
   }
   //FALLING edge detection upCommand
   if(upCommand.isPressed() == false && lastUpCommand == true)
   {
     Serial.println("upCommand falling edge");
-    TIMER_CalibrationTrigger.stop(); //stop calibration timer
-    shutter.stopCalibration();
-    if(shutter.getFullMoveTime() != T_fullShutterMove)
-    {
-      T_fullShutterMove = shutter.getFullMoveTime();
-      jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
-      jsonSpiffs.saveConfig();
-      Serial.println("New calibration time:"+String(T_fullShutterMove));
-    }
   }
   lastUpCommand = upCommand.isPressed();
   #pragma endregion
@@ -168,87 +158,22 @@ void physicalInputsHandler()
     Serial.println("downCommand rising edge");
     if(shutter.isMoving())
     {
-      TIMER_CalibrationTrigger.stop();
       shutter.stop();
     }
     else
     {
       shutter.commandDown();
-      TIMER_CalibrationTrigger.start(); //start calibration timer
     }
   }
   //FALLING edge detection downCommand
   if(downCommand.isPressed() == false && lastDownCommand == true)
   {
     Serial.println("downCommand falling edge");
-    TIMER_CalibrationTrigger.stop(); //stop calibration timer
-    shutter.stopCalibration();
-    if(shutter.getFullMoveTime() != T_fullShutterMove)
-    {
-      T_fullShutterMove = shutter.getFullMoveTime();
-      jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
-      jsonSpiffs.saveConfig();
-      Serial.println("New calibration time:"+String(T_fullShutterMove));
-    }
   }
   lastDownCommand = downCommand.isPressed();
-  #pragma endregion
-  
-  #pragma region remoteUpCommand
-  //RISING edge detection remoteUpCommand
-  if(remoteUpCommand.isPressed() == true && lastRemoteUpCommand == false)
-  {
-    Serial.println("remoteUpCommand rising edge");
-    if(shutter.isMoving())
-    {
-      shutter.stop();
-      shutter.commandUp();
-    }
-    else
-    {
-      shutter.commandUp();
-    }
-  }
-  //FALLING edge detection remoteUpCommand
-  if(upCommand.isPressed() == false && lastUpCommand == true)
-  {
-    Serial.println("remoteUpCommand falling edge");
-    shutter.stop();   
-  }
-  lastRemoteUpCommand = remoteUpCommand.isPressed();
-  #pragma endregion
+  #pragma endregion    
 
-  #pragma region remoteDownCommand
-  //RISING edge detection remoteDownCommand
-  if(downCommand.isPressed() == true && lastDownCommand == false)
-  {
-    Serial.println("downCommand rising edge");
-    if(shutter.isMoving())
-    {
-      shutter.stop();
-      shutter.commandDown();
-    }
-    else
-    {
-      shutter.commandDown();
-    }
-  }
-  //FALLING edge detection remoteDownCommand
-  if(downCommand.isPressed() == false && lastDownCommand == true)
-  {
-    Serial.println("downCommand falling edge");
-    shutter.stop();
-  }
-  lastRemoteDownCommand = remoteDownCommand.isPressed();
-  #pragma endregion
-  
 
-  if(TIMER_CalibrationTrigger.fire())
-  {
-    TIMER_CalibrationTrigger.stop();
-    if(shutter.isMoving())
-      shutter.startCalibration();
-  }
 }
 
 void modbusCommandsHandler()

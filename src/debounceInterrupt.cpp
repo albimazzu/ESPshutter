@@ -1,29 +1,17 @@
 #include "DebounceInterrupt.h"
 
-// Inizializza il puntatore statico
-DebounceInterrupt* DebounceInterrupt::instances[4] = {nullptr, nullptr, nullptr, nullptr};
+DebounceInterrupt::DebounceInterrupt(uint8_t pin, uint8_t countTreshold, uint8_t edge)
+  : pin(pin), countTreshold(countTreshold), pressed(false),
+    pulseCount(0), lastPressedTime(0), notified(false), callback(nullptr){
 
-DebounceInterrupt::DebounceInterrupt(uint8_t timerIndex, uint8_t pin, uint32_t hzFreq)
-  : timerIndex(timerIndex), pin(pin), hzFreq(hzFreq), pressed(false) {
-
-    // Inizializza il timer hardware
-    timer = timerBegin(timerIndex, TIMER_PRESCALER, true);
-    timerAttachInterrupt(timer, &DebounceInterrupt::onTimerStatic, true);
-
-    // Imposta il pin come input
+    // Set the pin as input
     pinMode(pin, INPUT_PULLUP);
+    
+    debounceTimer = xTimerCreate(String("DebounceTmr"+String(pin)).c_str(), pdMS_TO_TICKS(TIMEOUT_LAST_PRESSED),
+                                     pdFALSE, this, DebounceInterrupt::timerCallback);
 
-    // Imposta l'interrupt sul pin
-    attachInterruptArg(digitalPinToInterrupt(pin), DebounceInterrupt::handleInterruptStatic, this, RISING);
-
-    // Calcolo filterTime
-    filterTime = 10e5/hzFreq;
-
-    // Calcolo valore timeout
-    timeout = 2*PULSE_COUNT_THRESHOLD*filterTime;
-
-    // Registra l'istanza corrente nella mappa
-    instances[timerIndex] = this;
+    // Set the interrupt on the pin
+    attachInterruptArg(digitalPinToInterrupt(pin), DebounceInterrupt::handleInterruptStatic, this, edge);
 }
 
 bool DebounceInterrupt::isPressed() const {
@@ -35,49 +23,57 @@ void IRAM_ATTR DebounceInterrupt::handleInterruptStatic(void* arg) {
     self->handleInterrupt();
 }
 
-void IRAM_ATTR DebounceInterrupt::onTimerStatic() {
-    for (int i = 0; i < 4; ++i) {
-        if (instances[i]) {
-            instances[i]->onTimer();
+void IRAM_ATTR DebounceInterrupt::handleInterrupt() {
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if(millis() - lastPressedTime < NOISE_FILTER_TIME) {
+        // If the interrupt was triggered too early, ignore it
+        return;
+    }
+
+    // Check if enough time has passed since the last interrupt
+    if(pulseCount == 0 || (millis() - lastPressedTime) < TIMEOUT_LAST_PRESSED) {
+        pulseCount++;
+        lastPressedTime = millis();
+    } else {
+        // If the time since the last press exceeds TIMEOUT_LAST_PRESSED, reset the count
+        pulseCount = 0;
+        lastPressedTime = millis();
+    }
+
+    if(xTimerIsTimerActive(debounceTimer)) {
+        xTimerStopFromISR(debounceTimer, &xHigherPriorityTaskWoken);
+    }
+
+    if (pulseCount > countTreshold)
+    {
+        pressed = true;
+        // Start a FreeRTOS timer to reset the pressed state
+        xTimerStartFromISR(debounceTimer, &xHigherPriorityTaskWoken);
+
+        if (callback && !notified) {
+            callback(pressed);  // Notify press
+            notified = true;    // Mark as notified
+        }
+
+        if (xHigherPriorityTaskWoken) {
+            portYIELD_FROM_ISR();
         }
     }
+
 }
 
-void IRAM_ATTR DebounceInterrupt::handleInterrupt() {
-    portENTER_CRITICAL_ISR(&timerMux); 
+void DebounceInterrupt::timerCallback(TimerHandle_t xTimer) {
+    DebounceInterrupt* self = static_cast<DebounceInterrupt*>(pvTimerGetTimerID(xTimer));
 
+    self->pressed = false;  // Reset state
 
-    // Verifica che sia trascorso filterTime dall'ultimo interrupt
-    if(timerRead(timer) > filterTime)
-        pulseCount++;
-
-    if (pulseCount > PULSE_COUNT_THRESHOLD)
-        pressed = true;
-
-
-    timerAlarmDisable(timer);
-    timerWrite(timer, 0);  
-    timerAlarmWrite(timer, timeout, false);
-    timerAlarmEnable(timer);
-    portEXIT_CRITICAL_ISR(&timerMux);
+    if (self->callback) {
+        self->callback(self->pressed);  // Notify state change
+    }
+    self->notified = false;
 }
 
-//Timer timeout handler
-void IRAM_ATTR DebounceInterrupt::onTimer() {
-    portENTER_CRITICAL_ISR(&timerMux);
-    pulseCount = 0;
-    pressed = false;
-    timerAlarmDisable(timer);
-    timerWrite(timer, 0);    
-    portEXIT_CRITICAL_ISR(&timerMux);
+void DebounceInterrupt::setCallback(std::function<void(bool)> cb) {
+    callback = cb;
 }
-
-
-uint32_t DebounceInterrupt::getFilterTime() {
-    return filterTime;
-}
-
-uint32_t DebounceInterrupt::getTimeout() {
-    return timeout;
-}
-

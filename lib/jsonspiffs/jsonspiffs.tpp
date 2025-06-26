@@ -29,7 +29,7 @@ template<typename T>
 T JsonSpiffs::getNested(const char* objectKey, const char* nestedKey, T defaultValue) {
     // Verifica se l'oggetto principale esiste
     if (!config[objectKey]) {
-        config.createNestedObject(objectKey); // Crea un oggetto vuoto
+        config[objectKey].to<JsonObject>(); // Crea un oggetto vuoto
     }
 
     // Verifica se la sottochiave esiste nell'oggetto principale
