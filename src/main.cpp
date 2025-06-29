@@ -12,8 +12,6 @@
 #include "jsonspiffs.h"
 #include "mbslave.h"
 
-#define DEF_CALIBRATION_PRESSED_TIME 5000 //msec, when up/down buttons are pressed more than this time start calibration
-
 long T_fullShutterMove;
 long T_openingShutterMove;
 int nModbusId;
@@ -24,22 +22,19 @@ JsonSpiffs jsonSpiffs("/config.json");
 
 Connection wifiConnection;
 
-//MbSlave modbusSlave(Serial1, PIN_485DIR, 21, 20);
 MbSlave modbusSlave(Serial0, PIN_485DIR);
 
 // Istanza della classe DebounceInterrupt
 DebounceInterrupt upCommand(PIN_ACIN_1, 4, FALLING);
 DebounceInterrupt downCommand(PIN_ACIN_2, 4, FALLING);
-//DebounceInterrupt remoteUpCommand(2, PIN_ACIN_3, 60); //freq in Hz
-//DebounceInterrupt remoteDownCommand(3, PIN_ACIN_4, 60); //freq in Hz
+// DebounceInterrupt remoteUpCommand(PIN_ACIN_3, 4, FALLING);
+// DebounceInterrupt remoteDownCommand(PIN_ACIN_4, 4, FALLING);
 
 bool lastUpCommand = false;
 bool lastDownCommand = false;
-bool lastRemoteUpCommand = false;
-bool lastRemoteDownCommand = false;
 
 MillisTimer TIMER_Heartbeat;
-MillisTimer TIMER_CalibrationTrigger;
+MillisTimer TIMER_BtnLongPress;
 
 Shutter shutter(PIN_UP_CMD, PIN_DOWN_CMD);
 
@@ -56,13 +51,13 @@ void loadConfig();
 void saveConfig();
 
 
-void eventoTasto1(bool pressed) {
-    Serial.println("[Tasto 1] Stato: " + String(pressed));
-}
+// void eventoTasto1(bool pressed) {
+//     Serial.println("[Tasto 1] Stato: " + String(pressed));
+// }
 
-void eventoTasto2(bool pressed) {
-    Serial.println("[Tasto 2] Stato: " + String(pressed));
-}
+// void eventoTasto2(bool pressed) {
+//     Serial.println("[Tasto 2] Stato: " + String(pressed));
+// }
 
 void setup() {
   
@@ -87,15 +82,15 @@ void setup() {
   modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
 
   TIMER_Heartbeat.begin(500);  
-  TIMER_CalibrationTrigger.begin(DEF_CALIBRATION_PRESSED_TIME);
+  TIMER_BtnLongPress.begin(1500);
 
   shutter.begin(T_fullShutterMove);
 
   //turn on wifi on startup
   wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
 
-  upCommand.setCallback(eventoTasto1);
-  downCommand.setCallback(eventoTasto2);
+  // upCommand.setCallback(eventoTasto1);
+  // downCommand.setCallback(eventoTasto2);
 
   delay(1000);
   Serial.println("Setup completed");
@@ -119,9 +114,11 @@ void loop() {
   // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
   
 
-  if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
+  if(!digitalRead(PIN_USRBTN) || modbusSlave.getHoldingReg(HOLDINGREG_TURN_ON_AP) == 1)
   {
-   wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+    modbusSlave.writeHoldingReg(HOLDINGREG_TURN_ON_AP, 0); //reset turn on AP command
+    if(wifiConnection.getWiFiStatus() == WIFI_OFF)
+      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
   }
   wifiConnection.loop();
 }
@@ -135,19 +132,21 @@ void physicalInputsHandler()
   {
     Serial.println("upCommand rising edge");
     if(shutter.isMoving())
-    {
       shutter.stop();
-    }
     else
-    {
       shutter.commandUp();
-    }
   }
   //FALLING edge detection upCommand
   if(upCommand.isPressed() == false && lastUpCommand == true)
   {
     Serial.println("upCommand falling edge");
+    if(TIMER_BtnLongPress.fire())
+    {
+      TIMER_BtnLongPress.stop();
+      shutter.stop();
+    }
   }
+
   lastUpCommand = upCommand.isPressed();
   #pragma endregion
 
@@ -157,23 +156,27 @@ void physicalInputsHandler()
   {
     Serial.println("downCommand rising edge");
     if(shutter.isMoving())
-    {
       shutter.stop();
-    }
     else
-    {
       shutter.commandDown();
-    }
   }
   //FALLING edge detection downCommand
   if(downCommand.isPressed() == false && lastDownCommand == true)
   {
-    Serial.println("downCommand falling edge");
+    Serial.println("downCommand falling edge");    
+    if(TIMER_BtnLongPress.fire())
+    {
+      TIMER_BtnLongPress.stop();
+      shutter.stop();
+    }
   }
   lastDownCommand = downCommand.isPressed();
-  #pragma endregion    
+  #pragma endregion      
 
-
+  if(upCommand.isPressed() || downCommand.isPressed())
+    TIMER_BtnLongPress.start();
+  else
+    TIMER_BtnLongPress.stop();
 }
 
 void modbusCommandsHandler()
