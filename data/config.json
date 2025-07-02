@@ -1,5 +1,5 @@
 {
-    "T_fullShutterMove": 12000,
+    "T_fullShutterMove": 5000,
     "T_openingShutterMove": 5000,
     "nModbusId": 2,
     "wifiAP": {

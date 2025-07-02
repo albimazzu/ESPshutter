@@ -38,8 +38,6 @@ MillisTimer TIMER_BtnLongPress;
 
 Shutter shutter(PIN_UP_CMD, PIN_DOWN_CMD);
 
-uint16_t oldModbusCommand = 0;
-
 void physicalInputsHandler();
 void modbusCommandsHandler();
 void heartbeat();
@@ -113,13 +111,10 @@ void loop() {
   modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
   // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
   
-
-  if(!digitalRead(PIN_USRBTN) || modbusSlave.getHoldingReg(HOLDINGREG_TURN_ON_AP) == 1)
-  {
-    modbusSlave.writeHoldingReg(HOLDINGREG_TURN_ON_AP, 0); //reset turn on AP command
-    if(wifiConnection.getWiFiStatus() == WIFI_OFF)
+  //Turn on AP if USER button is pressed
+  if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF);
       wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
-  }
+      
   wifiConnection.loop();
 }
 
@@ -181,12 +176,13 @@ void physicalInputsHandler()
 
 void modbusCommandsHandler()
 {
-  if(modbusSlave.getHoldingReg(HOLDINGREG_COMMAND) != oldModbusCommand)
+  if(modbusSlave.getHoldingReg(HOLDINGREG_COMMAND) > 0)
   {
     //Command changed
-    oldModbusCommand = modbusSlave.getHoldingReg(HOLDINGREG_COMMAND);
-    Serial.println("Received modbus command: " + String(oldModbusCommand));
-    switch (oldModbusCommand)
+    int command = modbusSlave.getHoldingReg(HOLDINGREG_COMMAND);
+    modbusSlave.writeHoldingReg(HOLDINGREG_COMMAND, 0); //reset command register
+    Serial.println("Received modbus command: " + String(command));
+    switch (command)
     {
     case CMD_STOP:
       if(shutter.isMoving() && !shutter.isCalibrating())
@@ -214,14 +210,20 @@ void modbusCommandsHandler()
     case CMD_GO_TARGET:
       /* code */
       break;
-
-    case 10:
-      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
-      break;
     
     default:
       break;
     }
+  }
+
+  if(modbusSlave.getHoldingReg(HOLDINGREG_TURN_ON_AP) > 0)
+  {
+    //Turn on AP command received
+    Serial.println("Received modbus command: TURN ON AP");
+    modbusSlave.writeHoldingReg(HOLDINGREG_TURN_ON_AP, 0); //reset turn on AP command
+    if(wifiConnection.getWiFiStatus() == WIFI_OFF)
+      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+    
   }
 }
 
