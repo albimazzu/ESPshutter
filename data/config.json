@@ -1,9 +1,9 @@
 {
-    "T_fullShutterMove": 5000,
+    "T_fullShutterMove": 14000,
     "T_openingShutterMove": 5000,
-    "nModbusId": 2,
+    "nModbusId": 8,
     "wifiAP": {
-        "ssid": "ESP_Shutter_camera",
+        "ssid": "Tapp_Sala_Finestra",
         "password": "12345678"
     }
 }
