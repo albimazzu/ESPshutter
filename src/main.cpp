@@ -6,14 +6,11 @@
 #include "mapping.h"
 #include "debounceInterrupt.h"
 #include "MillisTimer.h"
-#include "secrets.h"
 #include "connection.h"
 #include "shutter.h"
 #include "variables.h"
 #include "jsonspiffs.h"
 #include "mbslave.h"
-
-#define DEF_CALIBRATION_PRESSED_TIME 5000 //msec, when up/down buttons are pressed more than this time start calibration
 
 long T_fullShutterMove;
 long T_openingShutterMove;
@@ -25,21 +22,21 @@ JsonSpiffs jsonSpiffs("/config.json");
 
 Connection wifiConnection;
 
-//MbSlave modbusSlave(Serial1, PIN_485DIR, 21, 20);
 MbSlave modbusSlave(Serial0, PIN_485DIR);
 
 // Istanza della classe DebounceInterrupt
-DebounceInterrupt upCommand(0, PIN_ACIN_1, 60); //freq in Hz
-DebounceInterrupt downCommand(1, PIN_ACIN_2, 60); //freq in Hz
+DebounceInterrupt upCommand(PIN_ACIN_1, 4, FALLING);
+DebounceInterrupt downCommand(PIN_ACIN_2, 4, FALLING);
+// DebounceInterrupt remoteUpCommand(PIN_ACIN_3, 4, FALLING);
+// DebounceInterrupt remoteDownCommand(PIN_ACIN_4, 4, FALLING);
+
 bool lastUpCommand = false;
 bool lastDownCommand = false;
 
 MillisTimer TIMER_Heartbeat;
-MillisTimer TIMER_CalibrationTrigger;
+MillisTimer TIMER_BtnLongPress;
 
 Shutter shutter(PIN_UP_CMD, PIN_DOWN_CMD);
-
-uint16_t oldModbusCommand = 0;
 
 void physicalInputsHandler();
 void modbusCommandsHandler();
@@ -51,6 +48,14 @@ void setupSPIFFS();
 void loadConfig();
 void saveConfig();
 
+
+// void eventoTasto1(bool pressed) {
+//     Serial.println("[Tasto 1] Stato: " + String(pressed));
+// }
+
+// void eventoTasto2(bool pressed) {
+//     Serial.println("[Tasto 2] Stato: " + String(pressed));
+// }
 
 void setup() {
   
@@ -68,20 +73,22 @@ void setup() {
   pinMode(PIN_ACIN_4, INPUT);
   pinMode(PIN_SENSE, INPUT);
   pinMode(PIN_USRBTN, INPUT);
+  //pinMode(20, INPUT_PULLDOWN); //weak pulldown on RX pin to allow correct signal level, needed if R34 is missing
 
   loadConfig();
 
   modbusSlave.begin(MODBUS_BAUDRATE, nModbusId);
- // modbusSlave.onSetHreg(modbusCommandsHandler);
-
 
   TIMER_Heartbeat.begin(500);  
-  TIMER_CalibrationTrigger.begin(DEF_CALIBRATION_PRESSED_TIME);
+  TIMER_BtnLongPress.begin(1500);
 
   shutter.begin(T_fullShutterMove);
 
   //turn on wifi on startup
-  //wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+  wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+
+  // upCommand.setCallback(eventoTasto1);
+  // downCommand.setCallback(eventoTasto2);
 
   delay(1000);
   Serial.println("Setup completed");
@@ -99,21 +106,16 @@ void loop() {
 
 
   //Update input reg
-  // modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
-  // // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
-  // modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
-  // // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
-
-
-
-
+  modbusSlave.updateInputReg(INPUTREG_STATUS, shutter.getShutterState());
+  // modbusSlave.updateInputReg(INPUTREG_POSITION, shutter.getPosition());
+  modbusSlave.updateInputReg(INPUTREG_FULLMOVE_TIME, shutter.getFullMoveTime());
+  // modbusSlave.updateInputReg(INPUTREG_COLLISION_THRESHOLD, shutter.getCollisionThreshold());
   
-
-  // if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
-  // {
-  //  wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
-  // }
-  // wifiConnection.loop();
+  //Turn on AP if USER button is pressed
+  if(!digitalRead(PIN_USRBTN) && wifiConnection.getWiFiStatus() == WIFI_OFF)
+      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+      
+  wifiConnection.loop();
 }
 
 void physicalInputsHandler()
@@ -125,30 +127,21 @@ void physicalInputsHandler()
   {
     Serial.println("upCommand rising edge");
     if(shutter.isMoving())
-    {
-      TIMER_CalibrationTrigger.stop();
       shutter.stop();
-    }
     else
-    {
       shutter.commandUp();
-      TIMER_CalibrationTrigger.start(); //start calibration timer
-    }
   }
   //FALLING edge detection upCommand
   if(upCommand.isPressed() == false && lastUpCommand == true)
   {
     Serial.println("upCommand falling edge");
-    TIMER_CalibrationTrigger.stop(); //stop calibration timer
-    shutter.stopCalibration();
-    if(shutter.getFullMoveTime() != T_fullShutterMove)
+    if(TIMER_BtnLongPress.fire())
     {
-      T_fullShutterMove = shutter.getFullMoveTime();
-      jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
-      jsonSpiffs.saveConfig();
-      Serial.println("New calibration time:"+String(T_fullShutterMove));
+      TIMER_BtnLongPress.stop();
+      shutter.stop();
     }
   }
+
   lastUpCommand = upCommand.isPressed();
   #pragma endregion
 
@@ -158,49 +151,38 @@ void physicalInputsHandler()
   {
     Serial.println("downCommand rising edge");
     if(shutter.isMoving())
-    {
-      TIMER_CalibrationTrigger.stop();
       shutter.stop();
-    }
     else
-    {
       shutter.commandDown();
-      TIMER_CalibrationTrigger.start(); //start calibration timer
-    }
   }
   //FALLING edge detection downCommand
   if(downCommand.isPressed() == false && lastDownCommand == true)
   {
-    Serial.println("downCommand falling edge");
-    TIMER_CalibrationTrigger.stop(); //stop calibration timer
-    shutter.stopCalibration();
-    if(shutter.getFullMoveTime() != T_fullShutterMove)
+    Serial.println("downCommand falling edge");    
+    if(TIMER_BtnLongPress.fire())
     {
-      T_fullShutterMove = shutter.getFullMoveTime();
-      jsonSpiffs.set("T_fullShutterMove", T_fullShutterMove);
-      jsonSpiffs.saveConfig();
-      Serial.println("New calibration time:"+String(T_fullShutterMove));
+      TIMER_BtnLongPress.stop();
+      shutter.stop();
     }
   }
   lastDownCommand = downCommand.isPressed();
-  #pragma endregion
+  #pragma endregion      
 
-  if(TIMER_CalibrationTrigger.fire())
-  {
-    TIMER_CalibrationTrigger.stop();
-    if(shutter.isMoving())
-      shutter.startCalibration();
-  }
+  if(upCommand.isPressed() || downCommand.isPressed())
+    TIMER_BtnLongPress.start();
+  else
+    TIMER_BtnLongPress.stop();
 }
 
 void modbusCommandsHandler()
 {
-  if(modbusSlave.getHoldingReg(HOLDINGREG_COMMAND) != oldModbusCommand)
+  if(modbusSlave.getHoldingReg(HOLDINGREG_COMMAND) > 0)
   {
     //Command changed
-    oldModbusCommand = modbusSlave.getHoldingReg(HOLDINGREG_COMMAND);
-    Serial.println("Received modbus command: " + String(oldModbusCommand));
-    switch (oldModbusCommand)
+    int command = modbusSlave.getHoldingReg(HOLDINGREG_COMMAND);
+    modbusSlave.writeHoldingReg(HOLDINGREG_COMMAND, 0); //reset command register
+    Serial.println("Received modbus command: " + String(command));
+    switch (command)
     {
     case CMD_STOP:
       if(shutter.isMoving() && !shutter.isCalibrating())
@@ -228,14 +210,20 @@ void modbusCommandsHandler()
     case CMD_GO_TARGET:
       /* code */
       break;
-
-    case 10:
-      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
-      break;
     
     default:
       break;
     }
+  }
+
+  if(modbusSlave.getHoldingReg(HOLDINGREG_TURN_ON_AP) > 0)
+  {
+    //Turn on AP command received
+    Serial.println("Received modbus command: TURN ON AP");
+    modbusSlave.writeHoldingReg(HOLDINGREG_TURN_ON_AP, 0); //reset turn on AP command
+    if(wifiConnection.getWiFiStatus() == WIFI_OFF)
+      wifiConnection.initWiFiAP(wifiApSSID.c_str(), wifiApPassword.c_str(), 60000);
+    
   }
 }
 
@@ -293,52 +281,18 @@ void setupSPIFFS() {
 
 void loadConfig()
 {
-  jsonSpiffs.begin();
-  jsonSpiffs.loadConfig();
+  jsonSpiffs.begin();  
+  bool configExist = jsonSpiffs.loadConfig();
+
   T_fullShutterMove = jsonSpiffs.get("T_fullShutterMove", DEFAULT_T_fullShutterMove);
   T_openingShutterMove = jsonSpiffs.get("T_openingShutterMove", DEFAULT_T_openingShutterMove);
   nModbusId = jsonSpiffs.get("nModbusId", DEFAULT_nModbusId);
   //Wifi ap settings
-  wifiApSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid");
-  wifiApPassword = jsonSpiffs.getNested<String>("wifiAP", "password");
+  wifiApSSID = jsonSpiffs.getNested<String>("wifiAP", "ssid", DEFAULT_AP_SSID);
+  wifiApPassword = jsonSpiffs.getNested<String>("wifiAP", "password", DEFAULT_AP_PASSWORD);
+
+  if(!configExist)
+    jsonSpiffs.saveConfig();
 
   jsonSpiffs.printConfig();
 }
-
-// //Loading config.json
-// void loadConfig() {
-//   File file = SPIFFS.open("/config.json", "r");
-//   if (!file) {
-//     Serial.println("Failed to open config file");
-//     return;
-//   }
-
-//   JsonDocument doc;
-//   DeserializationError error = deserializeJson(doc, file);
-//   if (error) {
-//     Serial.println("Failed to read config file, using default T_fullShutterMove");
-//     T_fullShutterMove = DEFAULT_T_fullShutterMove;
-//   } else {
-//     T_fullShutterMove = doc["fullShutterMove"] | DEFAULT_T_fullShutterMove;
-//     Serial.println("Loaded fullShutterMove: " + String(T_fullShutterMove));
-//   }
-//   file.close();
-// }
-
-// // Save data into config.json
-// void saveConfig() {
-//   File file = SPIFFS.open("/config.json", "w");
-//   if (!file) {
-//     Serial.println("Failed to open config file for writing");
-//     return;
-//   }
-
-//   JsonDocument doc;
-//   doc["fullShutterMove"] = T_fullShutterMove;
-  
-//   if (serializeJson(doc, file) == 0) {
-//     Serial.println("Failed to write to config file");
-//   }
-  
-//   file.close();
-// }

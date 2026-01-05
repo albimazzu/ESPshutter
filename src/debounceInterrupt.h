@@ -2,35 +2,29 @@
 #define DEBOUNCEINTERRUPT_H
 
 #include <Arduino.h>
-#define TIMER_PRESCALER 80
-#define PULSE_COUNT_THRESHOLD 2
+#define TIMEOUT_LAST_PRESSED 100 // msec, max time between two interrupts
+#define NOISE_FILTER_TIME 5 // msec, time to ignore noise
 
 class DebounceInterrupt {
 public:
-    DebounceInterrupt(uint8_t timerIndex, uint8_t pin, uint32_t hzFreq);
+    DebounceInterrupt(uint8_t pin, uint8_t countTreshold, uint8_t edge);
     bool isPressed() const;
-    uint32_t getTimeout();
-    uint32_t getFilterTime();
+    void setCallback(std::function<void(bool)> cb);
 
 private:
     static void IRAM_ATTR handleInterruptStatic(void* arg);
-    static void IRAM_ATTR onTimerStatic();
     void IRAM_ATTR handleInterrupt();
-    void IRAM_ATTR onTimer();
+    static void timerCallback(TimerHandle_t xTimer);
 
-    uint8_t timerIndex;
     uint8_t pin;
-    uint32_t hzFreq;
-    volatile int pulseCount;
+    uint8_t countTreshold;
+    volatile uint8_t pulseCount;
+    volatile uint32_t lastPressedTime;
     volatile bool pressed;
-    uint32_t filterTime;
-    uint32_t timeout;
-    hw_timer_t* timer;
-    portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-    volatile uint32_t lastInterruptTime; // Variabile per memorizzare il tempo dell'ultimo interrupt
-
-
-    static DebounceInterrupt* instances[4]; // Massimo 4 timer hardware
+    volatile bool notified;
+    
+    TimerHandle_t debounceTimer;
+    std::function<void(bool)> callback;
 };
 
 #endif // DEBOUNCEINTERRUPT_H
